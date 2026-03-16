@@ -1,0 +1,5 @@
+run_artifacts/**/evaluation/**/*.csv filter=lfs diff=lfs merge=lfs -text
+# --- LFS: experiment artifacts (keep repo lightweight) ---
+run_artifacts/**/answers/**/*.csv     filter=lfs diff=lfs merge=lfs -text
+run_artifacts/**/evaluation/**/*.csv  filter=lfs diff=lfs merge=lfs -text
+# run_artifacts/**/paraphrases/**/*.csv filter=lfs diff=lfs merge=lfs -text
