@@ -107,6 +107,8 @@ def run_answer_generation(
     max_local_time: int = 300,
     max_api_tokens: int = 256,
     answer_prompt_name: str = None,
+    tensor_parallel_size: int = None,
+    gpu_memory_utilization: float = 0.85,
 ):
     """
     Run the answer generation pipeline for multiple models.
@@ -205,7 +207,7 @@ def run_answer_generation(
             continue
 
         # llm = get_llm(model_name, api_models, max_local_tokens=max_local_tokens, max_local_time=max_local_time, max_api_tokens=max_api_tokens)
-        llm = get_llm_from_list(model_name, api_models, max_local_tokens=max_local_tokens, max_api_tokens=max_api_tokens)
+        llm = get_llm_from_list(model_name, api_models, max_local_tokens=max_local_tokens, max_api_tokens=max_api_tokens, gpu_memory_utilization=gpu_memory_utilization, tensor_parallel_size=tensor_parallel_size)
         llm.prepare()
         
         prompts = [ANSWER_PROMPT.format(q=q) for q in paras]
@@ -294,6 +296,8 @@ def parse_args():
         action="store_true",
         help="Force regenerate even if outputs exist",
     )
+    parser.add_argument("--tensor-parallel-size", type=int, default=None)
+    parser.add_argument("--gpu-memory-utilization", type=float, default=0.85, help="Max GPU memory utilization for local models (e.g., 0.85 for 85%)")
     parser.set_defaults(resume=True)  # ✅ Resume by default
     return parser.parse_args()
 
@@ -317,4 +321,6 @@ if __name__ == "__main__":
         max_local_time=args.max_local_time,
         max_api_tokens=args.max_api_tokens,
         answer_prompt_name=args.answer_prompt_name,
+        tensor_parallel_size=args.tensor_parallel_size,
+        gpu_memory_utilization=args.gpu_memory_utilization
     )

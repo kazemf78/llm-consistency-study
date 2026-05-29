@@ -39,6 +39,17 @@ class OpenAIAPILLM(APILLM):
         self._aclient = None  # ensure we never touch async paths
 
 
+    def _sanitize_kwargs(self, kwargs):
+        # map old param
+        if "max_tokens" in kwargs:
+            kwargs["max_output_tokens"] = kwargs.pop("max_tokens")
+
+        # remove unsupported params for GPT-5
+        if self.model.startswith("gpt-5"):
+            kwargs.pop("temperature", None)
+
+        return kwargs
+
     def _merge_args(self, call_args: tuple, call_kwargs: Dict[str, Any]):
         """
         Merge init-time *args/**kwargs with per-call *args/**kwargs.
@@ -48,6 +59,7 @@ class OpenAIAPILLM(APILLM):
         args = (*self.extra_args, *call_args)
         # kwargs: per-call overrides init defaults
         merged = {**self.extra_kwargs, **call_kwargs}
+        merged = self._sanitize_kwargs(merged)
         return args, merged
 
     def single(self, prompt: str, *args, **kwargs) -> str:

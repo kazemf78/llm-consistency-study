@@ -4,6 +4,8 @@ paraphraser_data*/
 run_logs*/
 answers_*/
 prev_notebooks_and_scripts/
+*.pdf
+annotation_splits_v00/*
 
 # Python-generated files
 __pycache__/

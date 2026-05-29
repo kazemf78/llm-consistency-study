@@ -162,6 +162,7 @@ def get_llm(
                 max_tokens=max_tokens,
                 gpu_memory_utilization=gpu_memory_utilization,
                 temperature=temperature,
+                tensor_parallel_size=kwargs.pop("tensor_parallel_size", None),
                 **kwargs
             )
         else:
@@ -237,6 +238,9 @@ def get_llm_from_list(
     """
     # Parse model name and thinking flag
     clean_model_name, enable_thinking = _parse_model_name(model_name)
+
+    gpu_memory_utilization=kwargs.pop("gpu_memory_utilization", 0.85)
+    tensor_parallel_size=kwargs.pop("tensor_parallel_size", None)
     
     if clean_model_name in api_models:
         from llm_consistency.models.openai_api import OpenAIAPILLM
@@ -259,7 +263,10 @@ def get_llm_from_list(
         llm = VLLMLocalLLM(
             model_id=clean_model_name,
             max_tokens=max_local_tokens,
-            gpu_memory_utilization=kwargs.pop("gpu_memory_utilization", 0.85),
+            # gpu_memory_utilization=kwargs.pop("gpu_memory_utilization", 0.85),
+            gpu_memory_utilization=gpu_memory_utilization,
+            # tensor_parallel_size=kwargs.pop("tensor_parallel_size", None),
+            tensor_parallel_size=tensor_parallel_size,
             **kwargs
         )
     

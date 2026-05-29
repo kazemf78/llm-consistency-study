@@ -125,7 +125,7 @@ class Answer:
             original_question=row["original_question"],
             paraphrased_question=row["paraphrased_question"],
             model=row["model"],
-            text=row["answer"],
+            text=str(row["answer"]),
             temperature=row.get("temperature", 0.0),
         )
 

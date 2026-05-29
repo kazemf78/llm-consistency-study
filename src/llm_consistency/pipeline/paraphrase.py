@@ -13,6 +13,7 @@ from dotenv import load_dotenv
 
 # from llm_consistency.models.hf_local import HFLocalLLM
 from llm_consistency.models.openai_api import OpenAIAPILLM
+from llm_consistency.models.factory import get_llm
 from llm_consistency.metrics.semantic import nli_consistency_matrix_batched_fast
 
 from pathlib import Path
@@ -69,14 +70,20 @@ TONES: List[Tuple[str, str]] = [
 PLAIN_TEMPLATE = load_prompt("paraphrase/plain")
 TONED_TEMPLATE = load_prompt("paraphrase/toned")
 JUDGE_EQUIV_TEMPLATE = load_prompt("paraphrase/judge_equivalence")
+JUDGE_EQUIV_TEMPLATE = load_prompt("paraphrase/v1")
 
 
 # ---------------------------- Paraphrase Generator ----------------------------
 
 class ParaphraseGenerator:
     def __init__(self, resp_model: str = "gpt-4.1-mini", judge_model: str = "gpt-4.1-mini", api_key: Optional[str] = None):
-        self.llm = OpenAIAPILLM(model=resp_model, api_key=api_key)
-        self.judge = OpenAIAPILLM(model=judge_model, api_key=api_key)
+        # self.llm = OpenAIAPILLM(model=resp_model, api_key=api_key)
+        # self.judge = OpenAIAPILLM(model=judge_model, api_key=api_key)
+        # self.llm = get_llm(resp_model, api_key=api_key)
+        # self.judge = get_llm(judge_model, max_tokens=1024, api_key=api_key)
+        # todo! api_key proper handling!
+        self.llm = get_llm(resp_model)
+        self.judge = get_llm(judge_model, max_tokens=1024)
         self.llm.prepare()
         self.judge.prepare()
 
@@ -99,6 +106,7 @@ class ParaphraseGenerator:
 
         outs = self.llm.batch(prompts, concurrency=10)
         cleaned = [(_clean_line(o), tip) for o, tip in zip(outs, tips) if o.strip()]
+        print(cleaned)
         return cleaned
 
     def _gen_toned_batch(self, q: str, n: int) -> List[Tuple[str, str]]:
@@ -106,11 +114,13 @@ class ParaphraseGenerator:
         prompts = [TONED_TEMPLATE.format(q=q, tone=t, desc=d) for (t, d) in picks]
         outs = self.llm.batch(prompts, concurrency=6)
         cleaned = [(_clean_line(o), f"{t} ({_d})") for o, (t, _d) in zip(outs, picks) if o and o.strip()]
+        print(cleaned)
         return cleaned
 
     def _judge_equivalence(self, orig: str, candidate: str) -> bool:
         prompt = JUDGE_EQUIV_TEMPLATE.format(orig=orig, cand=candidate)
         verdict = self.judge.single(prompt).strip().upper()
+        print(verdict)
         return verdict.startswith("Y")  # YES
 
     def _passes_overlap(self, candidate: str, against: List[str], overlap_max: float) -> bool:
@@ -212,6 +222,8 @@ def run_paraphrase_generation_pipeline(
     time_limit: int = 75,
     save_every: int = 5,
     executor_workers: int = 4,
+    resp_model: str = "gpt-4.1-mini",
+    judge_model: str = "gpt-4.1-mini",
 ):
     """
     Run the paraphrase generation pipeline for a dataset.
@@ -249,21 +261,22 @@ def run_paraphrase_generation_pipeline(
         "time_limit_per_question": time_limit,
     }
 
-    RESPONSES_MODEL = os.getenv("PARA_MODEL", "gpt-4.1-mini")
-    JUDGE_MODEL = os.getenv("JUDGE_MODEL", "gpt-4.1-mini")
+    # RESPONSES_MODEL = os.getenv("PARA_MODEL", "gpt-4.1-mini")
+    # JUDGE_MODEL = os.getenv("JUDGE_MODEL", "gpt-4.1-mini")
 
     run_config = {
         "dataset": dataset,
         "target_per_question": target_per_question,
         "num_rows": num_rows,
         "experiment_flag": experiment_flag,
-        "response_model": RESPONSES_MODEL,
-        "judge_model": JUDGE_MODEL,
+        "response_model": resp_model,
+        "judge_model": judge_model,
         "paraphrase_cfg": cfg,
         "prompts": {
             "plain": "paraphrase/plain",
             "toned": "paraphrase/toned",
-            "judge_equivalence": "paraphrase/judge_equivalence",
+            # "judge_equivalence": "paraphrase/judge_equivalence",
+            "judge_equivalence": "paraphrase/v1",
         }
     }
     save_pipeline_config(
@@ -290,7 +303,8 @@ def run_paraphrase_generation_pipeline(
         ids_processed = set(generated_df["idx"].tolist())
 
     executor = ThreadPoolExecutor(max_workers=executor_workers)
-    gen = ParaphraseGenerator(resp_model=RESPONSES_MODEL, judge_model=JUDGE_MODEL)
+    # gen = ParaphraseGenerator(resp_model=RESPONSES_MODEL, judge_model=JUDGE_MODEL)
+    gen = ParaphraseGenerator(resp_model=resp_model, judge_model=judge_model)
 
     for idx, row in df.iloc[:num_rows_to_process].iterrows():
         question = row[dataset_cfg["question_col"]]
@@ -304,7 +318,7 @@ def run_paraphrase_generation_pipeline(
         st_time = time.time()
         future = executor.submit(gen.generate, question, cfg, time_limit)
         try:
-            result = future.result(timeout=time_limit + 5)
+            result = future.result(timeout=time_limit + 25)
         except FuturesTimeout:
             timeout_count += 1
             print(f"⚠️ Timeout on idx={idx}")
@@ -359,6 +373,8 @@ def parse_args():
     parser.add_argument("--num-rows", type=str, default="5")
     parser.add_argument("--experiment-flag", type=str, default="v0")
     parser.add_argument("--no-resume", dest="resume", action="store_false", help="Disable resume (default: resume is enabled)")
+    parser.add_argument("--resp-model", type=str, default=os.getenv("PARA_MODEL", "gpt-4.1-mini"))
+    parser.add_argument("--judge-model", type=str, default=os.getenv("JUDGE_MODEL", "gpt-4.1-mini"))
     parser.set_defaults(resume=True)
     return parser.parse_args()
 
@@ -371,4 +387,6 @@ if __name__ == "__main__":
         num_rows=args.num_rows,
         experiment_flag=args.experiment_flag,
         resume=args.resume,
+        resp_model=args.resp_model,
+        judge_model=args.judge_model
     )

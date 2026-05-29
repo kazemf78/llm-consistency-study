@@ -29,8 +29,14 @@ class VLLMLocalLLM(LocalLLM):
     # ---- PREPARE ----
     def prepare(self):
         from transformers import AutoTokenizer
-
-        self.tokenizer = AutoTokenizer.from_pretrained(self.model_id)
+        import torch
+        try:
+            print(f"Loading tokenizer for {self.model_id} with trust_remote_code=True and use_fast=True...")
+            self.tokenizer = AutoTokenizer.from_pretrained(self.model_id, trust_remote_code=True, use_fast=True)
+        except Exception as e:
+            print(f"WARNING: Error loading fast tokenizer for {self.model_id}: {e}")
+            print("Retrying with use_fast=False (and trust_remote_code=True)...")
+            self.tokenizer = AutoTokenizer.from_pretrained(self.model_id, trust_remote_code=True, use_fast=False)
 
         # only keep args SamplingParams actually accepts
         sampling_fields = SamplingParams.__annotations__.keys()
@@ -43,14 +49,32 @@ class VLLMLocalLLM(LocalLLM):
             k: v for k, v in self.extra_kwargs.items()
             if k not in sampling_fields
         }
+        load_kwargs.setdefault("max_model_len", 16384)
+        # load_kwargs.setdefault("max_model_len", min(16384, self.max_tokens * 32))
+        # if "8B" in self.model_id:
+        #     load_kwargs["max_model_len"] = 16384
+        # elif "32B" in self.model_id:
+        #     load_kwargs["max_model_len"] = 8192
         print(load_kwargs)
-        self.llm = LLM(model=self.model_id, **load_kwargs)
+
+        num_gpus = torch.cuda.device_count()
+
+        tp_size = load_kwargs.pop("tensor_parallel_size", None) or num_gpus
+
+        print(f"[vLLM] Using tensor_parallel_size={tp_size} (available GPUs={num_gpus})")
+        self.llm = LLM(
+            model=self.model_id,
+            tensor_parallel_size=tp_size,
+            **load_kwargs
+        )
 
     # ---- SINGLE PROMPT ----
     def single(self, prompt: str, *args, **kwargs) -> str:
         prompt = self.apply_chat(prompt)
 
         gen_kwargs = {**self._gen_defaults, **kwargs}
+
+        gen_kwargs.pop("concurrency", None)
         gen_kwargs.setdefault("max_tokens", 256)
         if "max_new_tokens" in gen_kwargs:
             gen_kwargs["max_tokens"] = gen_kwargs["max_new_tokens"]
@@ -66,6 +90,8 @@ class VLLMLocalLLM(LocalLLM):
         prompts = [self.apply_chat(p) for p in prompts]
 
         gen_kwargs = {**self._gen_defaults, **kwargs}
+        
+        gen_kwargs.pop("concurrency", None)
         gen_kwargs.setdefault("max_tokens", 256)
         if "max_new_tokens" in gen_kwargs:
             gen_kwargs["max_tokens"] = gen_kwargs["max_new_tokens"]
